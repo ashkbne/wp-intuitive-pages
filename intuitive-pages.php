@@ -13,9 +13,10 @@ class Intuitive_Pages {
     const SLUG = 'intuitive-pages';
     const NONCE_ACTION = 'ip_nonce_action';
     const OPTION_PER_PAGE = 'ip_per_page';
+    const OPTION_LAST_VIEW = 'ip_last_view';
 
     public function __construct() {
-        add_action('admin_menu', array($this, 'register_menu'));
+        // Integrated into Pages screen; no separate submenu
         add_action('admin_enqueue_scripts', array($this, 'enqueue_assets'));
         add_action('wp_ajax_ip_get_children', array($this, 'ajax_get_children'));
         add_action('wp_ajax_ip_find_parent', array($this, 'ajax_find_parent'));
@@ -23,6 +24,7 @@ class Intuitive_Pages {
         // Integrate with the default Pages list (edit.php?post_type=page)
         add_filter('views_edit-page', array($this, 'add_pages_view_toggle'));
         add_action('all_admin_notices', array($this, 'maybe_render_in_pages_list'));
+        add_action('load-edit.php', array($this, 'maybe_handle_view_preference'));
     }
 
     public function register_menu() {
@@ -38,10 +40,9 @@ class Intuitive_Pages {
     }
 
     public function enqueue_assets($hook) {
-        $is_navigator_screen = ($hook === 'pages_page_' . self::SLUG);
         $is_pages_edit_toggle = ( isset($_GET['post_type'], $_GET['ip']) && $_GET['post_type'] === 'page' && $_GET['ip'] == '1' );
 
-        if ( ! $is_navigator_screen && ! $is_pages_edit_toggle ) return;
+        if ( ! $is_pages_edit_toggle ) return;
 
         wp_enqueue_style('ip-admin', plugins_url('assets/admin.css', __FILE__), array(), '1.1.0');
         wp_enqueue_script('ip-admin', plugins_url('assets/admin.js', __FILE__), array('jquery'), '1.1.0', true);
@@ -56,18 +57,19 @@ class Intuitive_Pages {
         ));
 
         if ( $is_pages_edit_toggle ) {
-            // Hide the default posts filter + table with CSS when our toggle is on
-            $custom_css = '.wrap form#posts-filter{display:none!important;} .wrap .subsubsub .ip-active a{font-weight:700;}';
+            // Hide the default list table and its controls when Navigator view is active
+            $custom_css = '.wrap .wp-list-table{display:none!important;} .wrap .tablenav{display:none!important;} .wrap .subsubsub .ip-active a{font-weight:700;}';
             wp_add_inline_style('ip-admin', $custom_css);
         }
     }
 
     public function add_pages_view_toggle($views) {
         // Adds a "Navigator" tab next to "All", "Published", etc.
-        $is_active = ( isset($_GET['ip']) && $_GET['ip'] == '1' );
-        $url = add_query_arg(array('post_type' => 'page', 'ip' => 1), admin_url('edit.php'));
-        $class = $is_active ? ' class="ip-active"' : '';
-        $views['ip'] = '<li' . $class . '><a href="' . esc_url($url) . '">' . esc_html__('Navigator', 'ip') . '</a></li>';
+        $is_nav_active = ( isset($_GET['ip']) && $_GET['ip'] == '1' );
+        $nav_url = add_query_arg(array('post_type' => 'page', 'ip' => 1), admin_url('edit.php'));
+        $list_url = add_query_arg(array('post_type' => 'page', 'ip' => 0), admin_url('edit.php'));
+        $views['ip_list'] = '<li' . ( ! $is_nav_active ? ' class="ip-active"' : '' ) . '><a href="' . esc_url($list_url) . '">' . esc_html__('List', 'ip') . '</a></li>';
+        $views['ip'] = '<li' . ( $is_nav_active ? ' class="ip-active"' : '' ) . '><a href="' . esc_url($nav_url) . '">' . esc_html__('Navigator', 'ip') . '</a></li>';
         return $views;
     }
 
@@ -90,6 +92,39 @@ class Intuitive_Pages {
         echo '<h1>' . esc_html__('Page Navigator', 'ip') . '</h1>';
         $this->render_page_contents(false); // standalone submenu mode
         echo '</div>';
+    }
+
+    public function maybe_handle_view_preference() {
+        // Persist and default to last used view on Pages screen
+        if ( ! isset($_GET['post_type']) || $_GET['post_type'] !== 'page' ) return;
+        if ( ! current_user_can('edit_pages') ) return;
+
+        $user_id = get_current_user_id();
+        $ip_param = isset($_GET['ip']) ? sanitize_text_field($_GET['ip']) : null;
+
+        if ( $ip_param === '1' ) {
+            update_user_meta($user_id, self::OPTION_LAST_VIEW, 'navigator');
+            return;
+        }
+
+        if ( $ip_param === '0' ) {
+            update_user_meta($user_id, self::OPTION_LAST_VIEW, 'list');
+            $clean = remove_query_arg('ip');
+            wp_safe_redirect($clean);
+            exit;
+        }
+
+        // No explicit view provided — honor last choice
+        $last = get_user_meta($user_id, self::OPTION_LAST_VIEW, true);
+        if ( $last === 'navigator' ) {
+            $target = add_query_arg('ip', 1);
+            wp_safe_redirect($target);
+            exit;
+        } else {
+            if ( $last !== 'list' ) {
+                update_user_meta($user_id, self::OPTION_LAST_VIEW, 'list');
+            }
+        }
     }
 
     private function render_page_contents($injected=false) {
@@ -126,14 +161,9 @@ class Intuitive_Pages {
 
         // Controls
         echo '<form method="get" class="ip-controls">';
-        if ( $injected ) {
-            // When injected on edit.php, maintain the base params
-            echo '<input type="hidden" name="post_type" value="page" />';
-            echo '<input type="hidden" name="ip" value="1" />';
-        } else {
-            echo '<input type="hidden" name="post_type" value="page" />';
-            echo '<input type="hidden" name="page" value="'. esc_attr(self::SLUG) .'" />';
-        }
+        // Integrated within Pages screen: maintain base params consistently
+        echo '<input type="hidden" name="post_type" value="page" />';
+        echo '<input type="hidden" name="ip" value="1" />';
 
         echo '<label class="ip-field">';
         echo '<span>' . esc_html__('Parent:', 'ip') . '</span>';
@@ -231,7 +261,7 @@ class Intuitive_Pages {
 
     private function build_breadcrumbs($post_id) {
         $crumbs = array();
-        $base_url_navigator = add_query_arg(array('post_type' => 'page', 'page' => self::SLUG), admin_url('edit.php'));
+        $base_url_navigator = add_query_arg(array('post_type' => 'page', 'ip' => 1), admin_url('edit.php'));
         $base_url_injected  = add_query_arg(array('post_type' => 'page', 'ip' => 1), admin_url('edit.php'));
 
         if ( $post_id && ($post = get_post($post_id)) ) {
@@ -302,7 +332,7 @@ class Intuitive_Pages {
         echo ' · ';
         echo '<a href="'. esc_url($view_link) .'" target="_blank">'. esc_html__('View', 'ip') .'</a>';
         echo ' · ';
-        echo '<a href="'. esc_url(add_query_arg(array('post_type'=>'page','page'=>self::SLUG,'parent'=>$post_id), admin_url('edit.php'))) .'">'. esc_html__('Show as parent', 'ip') .'</a>';
+        echo '<a href="'. esc_url(add_query_arg(array('post_type'=>'page','ip'=>1,'parent'=>$post_id), admin_url('edit.php'))) .'">'. esc_html__('Show as parent', 'ip') .'</a>';
         echo ' · ';
         echo '<a href="'. esc_url(get_delete_post_link($post_id, '', true)) .'" class="ip-delete">'. esc_html__('Trash', 'ip') .'</a>';
         echo '</span>';
@@ -384,8 +414,7 @@ class Intuitive_Pages {
                 'title' => get_the_title($pid),
                 'url'   => add_query_arg(array(
                     'post_type' => 'page',
-                    // keep context (submenu or injected)
-                    $this->is_injected_mode() ? 'ip' : 'page' => $this->is_injected_mode() ? 1 : self::SLUG,
+                    'ip'        => 1,
                     'parent'    => $pid
                 ), admin_url('edit.php'))
             );
