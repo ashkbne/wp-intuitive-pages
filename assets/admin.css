@@ -1,0 +1,23 @@
+.ip-wrap .ip-controls{
+    display:flex; gap:12px; align-items:flex-end; margin:12px 0 10px 0; flex-wrap:wrap;
+}
+.ip-wrap .ip-field{ display:flex; flex-direction:column; gap:4px; }
+.ip-wrap .ip-breadcrumbs{ margin:8px 0 14px; font-size:13px; color:#555; }
+.ip-wrap .ip-crumb-sep{ margin:0 6px; color:#999; }
+.ip-wrap .ip-tree{ background:#fff; border:1px solid #ddd; border-radius:6px; padding:8px 12px; }
+.ip-level{ list-style:none; padding-left:0; margin:0; }
+.ip-level .ip-level{ margin-left:24px; border-left:2px dotted #e3e3e3; padding-left:12px; }
+.ip-item{ margin:0; padding:6px 0; border-bottom:1px solid #f2f2f2; }
+.ip-item:last-child{ border-bottom:none; }
+.ip-row{ display:flex; align-items:center; gap:8px; }
+.ip-toggle{ width:24px; height:24px; text-align:center; font-weight:bold; border:1px solid #cfcfcf; border-radius:4px; }
+.ip-spacer{ display:inline-block; width:24px; }
+.ip-title a{ font-weight:600; text-decoration:none; }
+.ip-title a:hover{ text-decoration:underline; }
+.ip-meta{ margin-left:auto; font-size:12px; color:#666; }
+.ip-count{ margin-left:8px; font-size:12px; color:#444; }
+.ip-loading, .ip-empty{ color:#777; font-style:italic; padding:4px 0; }
+.ip-jump{ margin-left:auto; display:flex; gap:6px; align-items:flex-end; }
+@media (max-width: 900px){
+  .ip-meta{ display:none; }
+}
